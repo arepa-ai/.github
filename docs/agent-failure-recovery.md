@@ -2,6 +2,10 @@
 
 **Date:** 2026-07-29 · **Scope:** deep-agent loop, tool-calling failure semantics, recovery subsystems, user-facing failure surface.
 
+> **Validation + fix status (2026-07-29):** every P0 finding was re-validated against the code; fixes shipped in [agents-service#457](https://github.com/arepa-ai/agents-service/pull/457) (provider-error classification, loud model-call-limit exhaustion, `kind="error"` stream event, reconcile HTTP routes, `RecoverySkipped` classification parity, docs corrections) — all LLM-cost-neutral.
+>
+> **One correction to this report:** finding #1 in §2 (hub `recursion_limit` unset → `GraphRecursionError` at ~12 model calls) is **wrong for platform-served runs** — langgraph-api's `DEFAULT_RECURSION_LIMIT` is **10011**, not LangGraph's OSS default of 25, so the hub is effectively unbounded by recursion. The real hub bound is `ModelCallLimitMiddleware(run_limit=60)`, whose *silent* `exit_behavior="end"` exhaustion (finding #3) was the actual gap — now fixed. Direct invocations outside the platform (scripts, tests) do get the OSS default 25 and must set their own.
+
 ## TL;DR
 
 The agent loop (deepagents 0.6.x on LangGraph 1.2, Postgres checkpointing) **recovers well from the common in-loop failures** — malformed tool args, empty completions, and a subagent finishing without emitting its artifact all have live recovery machinery. But **several whole-run failure classes bypass every one of those layers and leave the user hanging with no message, no `failed` status, and a progress UI frozen at "generating"** — most notably an unset hub recursion limit, uncaught provider errors on the hub's own primary model, a silent model-call-limit exit, no `error` event kind in the streaming contract, and a stale-run reaper that exists but has no caller.
